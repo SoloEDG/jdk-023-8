@@ -4,6 +4,7 @@ const props = defineProps<{
   plungerReady: boolean
   paused: boolean
   canPause: boolean
+  replayOpen: boolean
 }>()
 
 const emit = defineEmits<{
@@ -78,6 +79,7 @@ function holdPlunger(event: PointerEvent, down: boolean): void {
         {{ paused ? '继续' : '暂停' }}
       </button>
       <button type="button" class="text-key text-key-strong" @click="emit('restart')">重开一局</button>
+      <span v-if="props.replayOpen" class="lock-hint">回放中，操作台不传给正在打的那一局</span>
     </div>
   </div>
 </template>

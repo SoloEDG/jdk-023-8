@@ -1,34 +1,105 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive } from 'vue'
 import { createInputController } from '@/app/input-map'
-import { startLoop } from '@/app/game-loop'
+import { runFrame, startLoop } from '@/app/game-loop'
+import { restartGame, togglePause } from '@/app/cabinet-actions'
 import { createDocument } from '@/shared/document'
 import { BonusBanner, ChainMeter } from '@/features/bonus'
 import { ControlDeck, TiltLamp } from '@/features/flippers'
-import { ChallengeBoard, HistoryList, readSave, ResultCard } from '@/features/records'
+import { ChallengeBoard, HistoryList, persist, readSave, ResultCard } from '@/features/records'
+import { createReplaySession, ReplayPanel } from '@/features/replay'
 import { EventTicker, ScoreHud } from '@/features/scoring'
 import { MechanismPanel, mountFresh, TableView } from '@/features/table'
 
-const doc = reactive(createDocument())
-mountFresh(doc, readSave())
+const live = reactive(createDocument())
+mountFresh(live, readSave())
 const input = createInputController(window)
+const replay = createReplaySession(live)
+/** The cabinet shows the live game, or the replay document while one is open. */
+const doc = computed(() => (replay.view.open ? replay.replayDoc : live))
 let stop = (): void => {}
 
 onMounted(() => {
-  stop = startLoop(doc, () => input.snapshot())
+  stop = startLoop(
+    {
+      frame: onFrame,
+      onHide: () => persist(live),
+      onLeave: () => persist(live),
+    },
+    () => input.snapshot(),
+  )
 })
 
 onBeforeUnmount(() => {
   stop()
   input.destroy()
+  replay.close()
 })
 
-const canPause = computed(() => doc.phase === 'ready' || doc.phase === 'playing' || doc.phase === 'paused')
-const plungerReady = computed(() => doc.ball.held === 'plunger' && doc.phase !== 'paused' && doc.phase !== 'gameover')
+function onFrame(frameInput: ReturnType<typeof input.snapshot>, dtMs: number): void {
+  // While a replay is open the live game is frozen: its inputs are dropped and
+  // no simulation step runs, so reviewing a replay cannot advance the run.
+  if (replay.view.open) {
+    // P merely pauses the replay itself; it never reaches the live game.
+    if (frameInput.pauseEdge) replay.toggle()
+    return
+  }
+
+  if (frameInput.restartEdge) {
+    // A new game starts clean; the previous tape is discarded, not inherited.
+    replay.discardRun()
+    restartGame(live)
+    return
+  }
+  if (frameInput.pauseEdge) {
+    togglePause(live)
+    return
+  }
+  if (live.phase === 'paused' || live.phase === 'gameover') return
+
+  // Start the tape as soon as the ball is charged for a launch: that is the
+  // beginning of the run the player will want to review.
+  const charging =
+    live.phase === 'ready' && live.ball.held === 'plunger' && frameInput.plunger && !replay.recorder.active
+  if (charging) replay.beginRun(live)
+
+  const outcome = runFrame(live, frameInput, dtMs, replay.recorder)
+  replay.observe()
+  if (outcome === 'ended') replay.endRun()
+}
+
+const canPause = computed(
+  () => !replay.view.open && (live.phase === 'ready' || live.phase === 'playing' || live.phase === 'paused'),
+)
+const plungerReady = computed(
+  () => !replay.view.open && live.ball.held === 'plunger' && live.phase !== 'paused' && live.phase !== 'gameover',
+)
 
 function onPlunger(down: boolean): void {
+  if (replay.view.open) return
   if (down) input.setPlunger(true)
   else input.releasePlunger()
+}
+
+/** Deck hold controls never reach the live game while a replay is open. */
+function onLeft(down: boolean): void {
+  if (!replay.view.open) input.setLeft(down)
+}
+
+function onRight(down: boolean): void {
+  if (!replay.view.open) input.setRight(down)
+}
+
+function onNudge(direction: -1 | 1): void {
+  if (!replay.view.open) input.pulseNudge(direction)
+}
+
+function onDeckPause(): void {
+  if (!replay.view.open) input.pulsePause()
+}
+
+function onDeckRestart(): void {
+  if (!replay.view.open) input.pulseRestart()
 }
 </script>
 
@@ -62,21 +133,33 @@ function onPlunger(down: boolean): void {
           <ChallengeBoard :doc="doc" />
           <MechanismPanel :doc="doc" />
           <HistoryList :doc="doc" />
+          <ReplayPanel
+            :view="replay.view"
+            :ready="replay.view.open || replay.canOpen()"
+            cold-hint="把球打出去，操作和每一帧的时间就会边打边记下来。"
+            :actions="replay.recentActions()"
+            @open="replay.open"
+            @close="replay.close"
+            @toggle="replay.toggle"
+            @scrub="replay.scrub"
+            @step="replay.step"
+          />
         </aside>
       </section>
 
       <ControlDeck
         :plunger-power="doc.plunger.power"
         :plunger-ready="plungerReady"
-        :paused="doc.phase === 'paused'"
+        :paused="!replay.view.open && live.phase === 'paused'"
         :can-pause="canPause"
-        @left="input.setLeft"
-        @right="input.setRight"
+        :replay-open="replay.view.open"
+        @left="onLeft"
+        @right="onRight"
         @plunger="onPlunger"
-        @nudge-left="input.pulseNudge(-1)"
-        @nudge-right="input.pulseNudge(1)"
-        @pause="input.pulsePause"
-        @restart="input.pulseRestart"
+        @nudge-left="onNudge(-1)"
+        @nudge-right="onNudge(1)"
+        @pause="onDeckPause"
+        @restart="onDeckRestart"
       />
     </main>
   </div>

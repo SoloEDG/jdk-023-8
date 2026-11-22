@@ -16,7 +16,12 @@ export function togglePause(doc: PinballDocument): void {
   }
 }
 
-export function applyDrain(doc: PinballDocument): void {
+/**
+ * `commit` is false while a recorded game is being replayed: the ball may
+ * still run out, but the replay must never append history, bump career
+ * goals or touch the stored best score.
+ */
+export function applyDrain(doc: PinballDocument, commit = true): void {
   doc.signals.drain = false
   if (doc.phase === 'gameover') return
   if (doc.nudge.tilted) doc.live.tilted = true
@@ -31,7 +36,7 @@ export function applyDrain(doc: PinballDocument): void {
     doc.phase = 'gameover'
     doc.ball.held = 'none'
     flashNote(doc, '球用尽了')
-    commitSession(doc, false)
+    if (commit) commitSession(doc, false)
     return
   }
   doc.phase = 'ready'

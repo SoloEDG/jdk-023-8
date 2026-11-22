@@ -294,6 +294,84 @@ button:focus-visible, canvas:focus-visible {
 
 .text-key-strong { background: #c81d3a; color: #fff6e8; }
 
+.lock-hint {
+  align-self: center;
+  color: #f3e2c4;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+
+/* Replay panel */
+
+.replay { background: #1a100c; border: 1px solid #d7a441; padding: 10px 12px; color: #f3e2c4; }
+
+.replay-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+
+.replay-head h2 {
+  margin: 0;
+  font-family: "Saira Stencil One", sans-serif;
+  font-size: 22px;
+  font-weight: 400;
+  color: #fff6e8;
+}
+
+.replay-key {
+  border: 1px solid #d7a441;
+  background: transparent;
+  color: #ffd56a;
+  padding: 6px 10px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12px;
+}
+
+.replay-key:not(:disabled):hover { background: rgba(215, 164, 65, 0.18); }
+
+.replay-key-strong { background: #c81d3a; border-color: #c81d3a; color: #fff6e8; }
+
+.replay-copy { margin: 8px 0 0; font-size: 13px; color: #e2cfa8; }
+
+.replay-saved { color: #8fd6a4; }
+
+.replay-warn { color: #ffd56a; }
+
+.replay-transport { display: grid; grid-template-columns: 1fr 1.4fr 1fr; gap: 6px; margin-top: 10px; }
+
+.replay-play { font-size: 14px; }
+
+.replay-scrub { display: block; margin-top: 10px; }
+
+.replay-scrub-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12px;
+  color: #e2cfa8;
+}
+
+.replay-scrub-label strong { font-size: 18px; color: #fff6e8; }
+
+.replay-scrub input { width: 100%; margin-top: 6px; accent-color: #c81d3a; }
+
+.replay-log {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  color: #cbb68f;
+}
+
+.replay-log li { display: flex; justify-content: space-between; gap: 8px; }
+
+.replay-log li:nth-child(odd) { background: rgba(215, 164, 65, 0.08); }
+
+.replay-log strong { color: #fff6e8; font-weight: 500; }
+
 button:disabled { opacity: 0.45; cursor: not-allowed; }
 
 @media (max-width: 860px) {

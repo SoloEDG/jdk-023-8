@@ -1,55 +1,62 @@
-import { commandFromInput, type FrameInput } from '@/shared/commands'
+import type { FrameInput } from '@/shared/commands'
 import type { PinballDocument } from '@/shared/document'
-import { absorbZones, tickBonus } from '@/features/bonus'
-import { advanceControls } from '@/features/flippers'
-import { persist, syncRecords } from '@/features/records'
-import { simulateBall } from '@/features/scoring'
-import { anchors, consumeContacts, publishGates, sampleRamp, sampleScoop, stickPlunger, syncTable } from '@/features/table'
-import { applyDrain, restartGame, togglePause } from '@/app/cabinet-actions'
+import type { ReplayRecorder } from '@/features/replay/model/recorder'
+import { syncRecords } from '@/features/records'
+import { advanceSimulation } from '@/app/simulation'
 
-export function runFrame(doc: PinballDocument, input: FrameInput, dtMs: number): void {
-  const command = commandFromInput(input)
-  if (command?.type === 'restart') {
-    restartGame(doc)
-    return
-  }
-  if (command?.type === 'pause-toggle') {
-    togglePause(doc)
-    return
-  }
-  if (doc.phase !== 'paused' && doc.note.ms > 0) doc.note.ms -= dtMs
-  if (doc.phase === 'paused' || doc.phase === 'gameover') return
+export type FrameOutcome = 'running' | 'ended'
 
-  advanceControls(doc, input, dtMs, anchors())
-  if (doc.ball.held === 'plunger') stickPlunger(doc)
-  if (doc.phase !== 'playing') return
-
-  doc.run.playMs += dtMs
-  tickBonus(doc, dtMs)
-  const solids = syncTable(doc, dtMs)
-  if (doc.ball.held !== 'plunger') {
-    const events = simulateBall(doc, solids, dtMs, { ramp: sampleRamp, scoop: sampleScoop })
-    consumeContacts(doc, events)
-    absorbZones(doc, events)
-    publishGates(doc)
-    if (doc.signals.drain) applyDrain(doc)
-  }
+/**
+ * Advances the live game by one frame.
+ *
+ * The recorder is fed *before* the step so its keyframes describe the state at
+ * the start of the frame they belong to; replaying then reproduces the exact
+ * run.  Pause and restart are cabinet commands handled by the caller and are
+ * deliberately absent from the tape.
+ */
+export function runFrame(
+  doc: PinballDocument,
+  input: FrameInput,
+  dtMs: number,
+  recorder: ReplayRecorder | null,
+): FrameOutcome {
+  if (doc.phase === 'paused' || doc.phase === 'gameover') return 'ended'
+  recorder?.record(input, dtMs, doc)
+  advanceSimulation(doc, input, dtMs, true)
   syncRecords(doc)
+  // The simulation may have just ended the run; read through a helper so
+  // TypeScript does not keep the pre-step narrowing.
+  return phaseOf(doc) === 'gameover' ? 'ended' : 'running'
 }
 
-export function startLoop(doc: PinballDocument, pull: () => FrameInput): () => void {
+function phaseOf(doc: PinballDocument): PinballDocument['phase'] {
+  return doc.phase
+}
+
+export interface LoopHandlers {
+  /** Called once per animation frame with the input snapshot and elapsed ms. */
+  frame: (input: FrameInput, dtMs: number) => void
+  /** Invoked when the tab becomes hidden. */
+  onHide?: () => void
+  /** Invoked before the page unloads. */
+  onLeave?: () => void
+}
+
+export function startLoop(handlers: LoopHandlers, pull: () => FrameInput): () => void {
   let last = performance.now()
   let handle = 0
   const onHide = (): void => {
-    if (document.hidden) persist(doc)
+    if (document.hidden) handlers.onHide?.()
   }
-  const onLeave = (): void => persist(doc)
+  const onLeave = (): void => handlers.onLeave?.()
   document.addEventListener('visibilitychange', onHide)
   window.addEventListener('pagehide', onLeave)
   const tick = (now: number): void => {
-    const step = Math.min(32, Math.max(0, now - last))
+    // Whole milliseconds keep the live step and the recorded tape identical,
+    // so replaying the inputs reproduces the run without accumulating drift.
+    const step = Math.min(32, Math.max(0, Math.round(now - last)))
     last = now
-    runFrame(doc, pull(), step)
+    handlers.frame(pull(), step)
     handle = requestAnimationFrame(tick)
   }
   handle = requestAnimationFrame(tick)
